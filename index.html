@@ -860,11 +860,13 @@ document.getElementById('authSubmitBtn').onclick = async () => {
   const btn = document.getElementById('authSubmitBtn');
   btn.disabled = true;
   try{
+    let cred;
     if(authMode === 'login'){
-      await auth.signInWithEmailAndPassword(email, password);
+      cred = await auth.signInWithEmailAndPassword(email, password);
     } else {
-      await auth.createUserWithEmailAndPassword(email, password);
+      cred = await auth.createUserWithEmailAndPassword(email, password);
     }
+    currentUser = cred.user; // don't rely solely on the async listener for this immediate flow
     document.getElementById('authGate').style.display = 'none';
     document.getElementById('appRoot').style.display = 'block';
     await loadData();
@@ -952,7 +954,8 @@ async function loadData(){
     }
   }catch(e){
     console.error('Firestore load error', e);
-    showToast('Błąd wczytywania danych z chmury');
+    const code = (e && e.code) ? ' (' + e.code + ')' : '';
+    showToast('Błąd wczytywania danych z chmury' + code, 8000);
     clients = []; quotes = []; bookings = []; workTypes = [];
   }
   storageReady = true;
@@ -1036,11 +1039,12 @@ window.onWorkTypeFocus = onWorkTypeFocus;
 window.onWorkTypeBlur = onWorkTypeBlur;
 window.selectWorkType = selectWorkType;
 
-function showToast(msg){
+function showToast(msg, durationMs){
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'), 2200);
+  clearTimeout(t._hideTimer);
+  t._hideTimer = setTimeout(()=>t.classList.remove('show'), durationMs || 2200);
 }
 
 // Tabs
