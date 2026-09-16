@@ -848,7 +848,10 @@ async function firestoreSetAppDataAll(data){
   const token = await currentUser.getIdToken();
   const fields = {};
   APPDATA_FIELDS.forEach(key => { fields[key] = { stringValue: JSON.stringify(data[key] || []) }; });
-  const resp = await fetch(FIRESTORE_BASE + '/appdata/' + currentUser.uid, {
+  // Bez updateMask, PATCH na jeszcze nieistniejącym dokumencie zwraca 404 — trzeba je jawnie podać,
+  // dokładnie tak jak przy pojedynczym polu, żeby Firestore utworzył dokument.
+  const maskParams = APPDATA_FIELDS.map(f => 'updateMask.fieldPaths=' + f).join('&');
+  const resp = await fetch(FIRESTORE_BASE + '/appdata/' + currentUser.uid + '?' + maskParams, {
     method: 'PATCH',
     headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
     body: JSON.stringify({ fields })
