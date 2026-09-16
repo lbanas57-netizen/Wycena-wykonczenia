@@ -95,7 +95,7 @@
     display:block;
     margin-bottom:5px;
   }
-  input[type=text], input[type=number], input[type=date], input[type=tel], select{
+  input[type=text], input[type=number], input[type=date], input[type=tel], input[type=email], input[type=password], select{
     width:100%;
     padding:10px 11px;
     background:var(--surface);
@@ -556,6 +556,25 @@
   </div>
 </div>
 
+<div id="authGate" class="lock-screen" style="display:none;">
+  <div class="lock-inner">
+    <div class="lock-icon">☁️</div>
+    <h2 id="authTitle">Zaloguj się</h2>
+    <p style="font-size:12px;color:var(--ink-soft);margin:-10px 0 18px;line-height:1.5;">Konto łączy Twoje dane na każdym urządzeniu.</p>
+    <div id="authError" class="lock-error"></div>
+    <div class="field" style="text-align:left;">
+      <span class="field-label">Email</span>
+      <input type="email" id="authEmail" autocomplete="email" placeholder="ty@przyklad.pl">
+    </div>
+    <div class="field" style="text-align:left;margin-bottom:18px;">
+      <span class="field-label">Hasło</span>
+      <input type="password" id="authPassword" autocomplete="current-password" placeholder="min. 6 znaków">
+    </div>
+    <button class="btn btn-primary" id="authSubmitBtn">Zaloguj się</button>
+    <button id="authToggleModeBtn" class="forgot-pin" style="margin-top:16px;">Nie masz konta? Załóż nowe</button>
+  </div>
+</div>
+
 <div id="appRoot" style="display:none;">
 <div class="app">
   <header class="top">
@@ -760,6 +779,8 @@
 
   <div style="text-align:center;padding:22px 0 4px;">
     <button id="changePinBtn" style="background:none;border:none;color:var(--ink-soft);font-size:11px;text-decoration:underline;cursor:pointer;">Zmień PIN</button>
+    <span style="color:var(--rule-strong);font-size:11px;"> · </span>
+    <button id="logoutBtn" style="background:none;border:none;color:var(--ink-soft);font-size:11px;text-decoration:underline;cursor:pointer;">Wyloguj</button>
   </div>
 </div>
 
@@ -776,7 +797,92 @@
   </div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <script>
+const firebaseConfig = {
+  apiKey: "AIzaSyCB4eer2hJee2vfEVHdK_AlG3QfJjoIBjE",
+  authDomain: "wycena-wykonczenia-44bb2.firebaseapp.com",
+  projectId: "wycena-wykonczenia-44bb2",
+  storageBucket: "wycena-wykonczenia-44bb2.firebasestorage.app",
+  messagingSenderId: "1005668311083",
+  appId: "1:1005668311083:web:ce13a72216cfbc2ca44a6e"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+let currentUser = null;
+let authReady = false;
+let resolveAuthReady;
+const authReadyPromise = new Promise(res => { resolveAuthReady = res; });
+auth.onAuthStateChanged(user => {
+  currentUser = user;
+  if(!authReady){ authReady = true; resolveAuthReady(user); }
+  const lockEl = document.getElementById('lockScreen');
+  if(!user && lockEl && lockEl.style.display === 'none'){
+    storageReady = false;
+    document.getElementById('appRoot').style.display = 'none';
+    document.getElementById('authGate').style.display = 'flex';
+    document.getElementById('authEmail').value = '';
+    document.getElementById('authPassword').value = '';
+  }
+});
+
+let authMode = 'login';
+document.getElementById('authToggleModeBtn').onclick = () => {
+  authMode = authMode === 'login' ? 'signup' : 'login';
+  document.getElementById('authTitle').textContent = authMode === 'login' ? 'Zaloguj się' : 'Załóż konto';
+  document.getElementById('authSubmitBtn').textContent = authMode === 'login' ? 'Zaloguj się' : 'Załóż konto';
+  document.getElementById('authToggleModeBtn').textContent = authMode === 'login' ? 'Nie masz konta? Załóż nowe' : 'Masz już konto? Zaloguj się';
+  document.getElementById('authError').textContent = '';
+};
+
+function authErrorMessage(e){
+  const code = (e && e.code) || '';
+  if(code.includes('wrong-password') || code.includes('invalid-credential')) return 'Błędny email lub hasło';
+  if(code.includes('user-not-found')) return 'Nie znaleziono konta z tym adresem email';
+  if(code.includes('email-already-in-use')) return 'Konto z tym adresem już istnieje — zaloguj się';
+  if(code.includes('weak-password')) return 'Hasło musi mieć min. 6 znaków';
+  if(code.includes('invalid-email')) return 'Nieprawidłowy adres email';
+  if(code.includes('network-request-failed')) return 'Brak połączenia z internetem';
+  return 'Wystąpił błąd — spróbuj ponownie';
+}
+
+document.getElementById('authSubmitBtn').onclick = async () => {
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const errEl = document.getElementById('authError');
+  errEl.textContent = '';
+  if(!email || !password){ errEl.textContent = 'Podaj email i hasło'; return; }
+  if(password.length < 6){ errEl.textContent = 'Hasło musi mieć min. 6 znaków'; return; }
+  const btn = document.getElementById('authSubmitBtn');
+  btn.disabled = true;
+  try{
+    if(authMode === 'login'){
+      await auth.signInWithEmailAndPassword(email, password);
+    } else {
+      await auth.createUserWithEmailAndPassword(email, password);
+    }
+    document.getElementById('authGate').style.display = 'none';
+    document.getElementById('appRoot').style.display = 'block';
+    await loadData();
+  }catch(e){
+    errEl.textContent = authErrorMessage(e);
+  }
+  btn.disabled = false;
+};
+
+document.getElementById('logoutBtn').onclick = async () => {
+  if(await showConfirm('Na pewno się wylogować? Dane są bezpieczne w chmurze — zalogujesz się ponownie, żeby je zobaczyć.')){
+    await auth.signOut();
+  }
+};
+
+function safeParseLocal(key){
+  try{ const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; }catch(e){ return null; }
+}
 let clients = [];
 let quotes = [];
 let workTypes = [];
@@ -828,24 +934,26 @@ function todayStr(){
 
 async function loadData(){
   try{
-    try{
-      const c = localStorage.getItem('wr_clients');
-      clients = c ? JSON.parse(c) : [];
-    }catch(e){ clients = []; }
-    try{
-      const q = localStorage.getItem('wr_quotes');
-      quotes = q ? JSON.parse(q) : [];
-    }catch(e){ quotes = []; }
-    try{
-      const wt = localStorage.getItem('wr_workTypes');
-      workTypes = wt ? JSON.parse(wt) : [];
-    }catch(e){ workTypes = []; }
-    try{
-      const bk = localStorage.getItem('wr_bookings');
-      bookings = bk ? JSON.parse(bk) : [];
-    }catch(e){ bookings = []; }
+    const docRef = db.collection('appdata').doc(currentUser.uid);
+    const snap = await docRef.get();
+    if(snap.exists){
+      const data = snap.data();
+      clients = data.clients || [];
+      quotes = data.quotes || [];
+      bookings = data.bookings || [];
+      workTypes = data.workTypes || [];
+    } else {
+      // pierwsze logowanie na tym koncie: przenosimy dane z tego urządzenia (jeśli są) do chmury
+      clients = safeParseLocal('wr_clients') || [];
+      quotes = safeParseLocal('wr_quotes') || [];
+      bookings = safeParseLocal('wr_bookings') || [];
+      workTypes = safeParseLocal('wr_workTypes') || [];
+      await docRef.set({ clients, quotes, bookings, workTypes });
+    }
   }catch(e){
-    console.error('Storage error', e);
+    console.error('Firestore load error', e);
+    showToast('Błąd wczytywania danych z chmury');
+    clients = []; quotes = []; bookings = []; workTypes = [];
   }
   storageReady = true;
   document.getElementById('loadMsg').style.display = 'none';
@@ -860,22 +968,22 @@ async function loadData(){
 
 async function saveClients(){
   try{
-    localStorage.setItem('wr_clients', JSON.stringify(clients));
+    await db.collection('appdata').doc(currentUser.uid).set({ clients }, { merge: true });
   }catch(e){ console.error('Save clients failed', e); showToast('Błąd zapisu klienta'); }
 }
 async function saveQuotes(){
   try{
-    localStorage.setItem('wr_quotes', JSON.stringify(quotes));
+    await db.collection('appdata').doc(currentUser.uid).set({ quotes }, { merge: true });
   }catch(e){ console.error('Save quotes failed', e); showToast('Błąd zapisu wyceny'); }
 }
 async function saveWorkTypes(){
   try{
-    localStorage.setItem('wr_workTypes', JSON.stringify(workTypes));
+    await db.collection('appdata').doc(currentUser.uid).set({ workTypes }, { merge: true });
   }catch(e){ console.error('Save workTypes failed', e); }
 }
 async function saveBookings(){
   try{
-    localStorage.setItem('wr_bookings', JSON.stringify(bookings));
+    await db.collection('appdata').doc(currentUser.uid).set({ bookings }, { merge: true });
   }catch(e){ console.error('Save bookings failed', e); showToast('Błąd zapisu terminu'); }
 }
 function renderWorkTypesList(){
@@ -2005,7 +2113,6 @@ window.deleteBooking = deleteBooking;
 // Init
 document.getElementById('quoteDate').value = todayStr();
 renderItems();
-loadData();
 
 // ===== Blokada PIN =====
 const PIN_LENGTH = 4;
@@ -2117,9 +2224,16 @@ async function processPinComplete(){
     return;
   }
 }
-function unlockApp(){
+async function unlockApp(){
   document.getElementById('lockScreen').style.display = 'none';
-  document.getElementById('appRoot').style.display = 'block';
+  if(!authReady){ await authReadyPromise; }
+  if(currentUser){
+    document.getElementById('authGate').style.display = 'none';
+    document.getElementById('appRoot').style.display = 'block';
+    if(!storageReady){ await loadData(); }
+  } else {
+    document.getElementById('authGate').style.display = 'flex';
+  }
 }
 document.querySelectorAll('#pinPad button[data-d]').forEach(btn=>{
   btn.addEventListener('click', () => handlePinDigit(btn.dataset.d));
@@ -2130,7 +2244,7 @@ document.getElementById('pinBackspace').addEventListener('click', () => {
   renderPinDots();
 });
 document.getElementById('forgotPinBtn').addEventListener('click', async () => {
-  if(await showConfirm('To usunie WSZYSTKIE zapisane dane (klienci, wyceny, terminy) i pozwoli ustawić nowy PIN. Kontynuować?')){
+  if(await showConfirm('To zresetuje blokadę PIN na tym urządzeniu. Twoje dane (klienci, wyceny, terminy) są bezpieczne w chmurze i nie zostaną utracone — po ustawieniu nowego PIN zalogujesz się ponownie. Kontynuować?')){
     try{ localStorage.clear(); }catch(e){}
     location.reload();
   }
