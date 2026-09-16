@@ -799,7 +799,6 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <script>
 const firebaseConfig = {
   apiKey: "AIzaSyCB4eer2hJee2vfEVHdK_AlG3QfJjoIBjE",
@@ -809,20 +808,53 @@ const firebaseConfig = {
   messagingSenderId: "1005668311083",
   appId: "1:1005668311083:web:ce13a72216cfbc2ca44a6e"
 };
-const fbApp = firebase.initializeApp(firebaseConfig);
+firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
-// Baza w konsoli Firebase nazywa się dosłownie "default" (nie specjalnym "(default)"),
-// więc trzeba się połączyć z nią jawnie po nazwie zamiast polegać na domyślnym zachowaniu.
-let db;
-try{
-  db = firebase.firestore(fbApp, 'default');
-}catch(e){
-  console.warn('Named Firestore database init failed, falling back to default instance', e);
-  db = firebase.firestore();
+
+// Baza danych obsługiwana przez zwykłe zapytania HTTPS (fetch) zamiast biblioteki Firestore SDK —
+// to samo co robi każda zwykła strona internetowa, więc omija cokolwiek blokowało wcześniejsze,
+// bardziej nietypowe połączenie.
+const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1/projects/' + firebaseConfig.projectId + '/databases/(default)/documents';
+const APPDATA_FIELDS = ['clients', 'quotes', 'bookings', 'workTypes'];
+
+async function firestoreGetAppData(){
+  const token = await currentUser.getIdToken();
+  const resp = await fetch(FIRESTORE_BASE + '/appdata/' + currentUser.uid, {
+    headers: { 'Authorization': 'Bearer ' + token }
+  });
+  if(resp.status === 404) return null;
+  if(!resp.ok) throw new Error('Firestore GET ' + resp.status);
+  const json = await resp.json();
+  const out = {};
+  APPDATA_FIELDS.forEach(key => {
+    const f = json.fields && json.fields[key];
+    out[key] = (f && f.stringValue) ? JSON.parse(f.stringValue) : [];
+  });
+  return out;
 }
-// Niektóre przeglądarki (np. z agresywną ochroną prywatności) blokują domyślny sposób łączenia się
-// Firestore ze światem. To wymusza bardziej kompatybilne, "zwykłe" połączenie HTTP zamiast strumieniowego.
-db.settings({ experimentalForceLongPolling: true });
+
+async function firestoreSetAppDataField(fieldName, value){
+  const token = await currentUser.getIdToken();
+  const url = FIRESTORE_BASE + '/appdata/' + currentUser.uid + '?updateMask.fieldPaths=' + fieldName;
+  const resp = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: { [fieldName]: { stringValue: JSON.stringify(value) } } })
+  });
+  if(!resp.ok) throw new Error('Firestore PATCH ' + resp.status);
+}
+
+async function firestoreSetAppDataAll(data){
+  const token = await currentUser.getIdToken();
+  const fields = {};
+  APPDATA_FIELDS.forEach(key => { fields[key] = { stringValue: JSON.stringify(data[key] || []) }; });
+  const resp = await fetch(FIRESTORE_BASE + '/appdata/' + currentUser.uid, {
+    method: 'PATCH',
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields })
+  });
+  if(!resp.ok) throw new Error('Firestore PATCH(all) ' + resp.status);
+}
 
 let currentUser = null;
 let authReady = false;
@@ -947,10 +979,8 @@ function todayStr(){
 
 async function loadData(){
   try{
-    const docRef = db.collection('appdata').doc(currentUser.uid);
-    const snap = await docRef.get();
-    if(snap.exists){
-      const data = snap.data();
+    const data = await firestoreGetAppData();
+    if(data){
       clients = data.clients || [];
       quotes = data.quotes || [];
       bookings = data.bookings || [];
@@ -961,12 +991,11 @@ async function loadData(){
       quotes = safeParseLocal('wr_quotes') || [];
       bookings = safeParseLocal('wr_bookings') || [];
       workTypes = safeParseLocal('wr_workTypes') || [];
-      await docRef.set({ clients, quotes, bookings, workTypes });
+      await firestoreSetAppDataAll({ clients, quotes, bookings, workTypes });
     }
   }catch(e){
     console.error('Firestore load error', e);
-    const code = (e && e.code) ? ' (' + e.code + ')' : '';
-    showToast('Błąd wczytywania danych z chmury' + code, 8000);
+    showToast('Błąd wczytywania danych z chmury: ' + e.message, 8000);
     clients = []; quotes = []; bookings = []; workTypes = [];
   }
   storageReady = true;
@@ -982,22 +1011,22 @@ async function loadData(){
 
 async function saveClients(){
   try{
-    await db.collection('appdata').doc(currentUser.uid).set({ clients }, { merge: true });
+    await firestoreSetAppDataField('clients', clients);
   }catch(e){ console.error('Save clients failed', e); showToast('Błąd zapisu klienta'); }
 }
 async function saveQuotes(){
   try{
-    await db.collection('appdata').doc(currentUser.uid).set({ quotes }, { merge: true });
+    await firestoreSetAppDataField('quotes', quotes);
   }catch(e){ console.error('Save quotes failed', e); showToast('Błąd zapisu wyceny'); }
 }
 async function saveWorkTypes(){
   try{
-    await db.collection('appdata').doc(currentUser.uid).set({ workTypes }, { merge: true });
+    await firestoreSetAppDataField('workTypes', workTypes);
   }catch(e){ console.error('Save workTypes failed', e); }
 }
 async function saveBookings(){
   try{
-    await db.collection('appdata').doc(currentUser.uid).set({ bookings }, { merge: true });
+    await firestoreSetAppDataField('bookings', bookings);
   }catch(e){ console.error('Save bookings failed', e); showToast('Błąd zapisu terminu'); }
 }
 function renderWorkTypesList(){
