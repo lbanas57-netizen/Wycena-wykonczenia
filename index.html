@@ -814,7 +814,7 @@ const auth = firebase.auth();
 // Baza danych obsługiwana przez zwykłe zapytania HTTPS (fetch) zamiast biblioteki Firestore SDK —
 // to samo co robi każda zwykła strona internetowa, więc omija cokolwiek blokowało wcześniejsze,
 // bardziej nietypowe połączenie.
-const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1/projects/' + firebaseConfig.projectId + '/databases/(default)/documents';
+const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1/projects/' + firebaseConfig.projectId + '/databases/default/documents';
 const APPDATA_FIELDS = ['clients', 'quotes', 'bookings', 'workTypes'];
 
 async function firestoreGetAppData(){
