@@ -812,6 +812,9 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
+// Niektóre przeglądarki (np. z agresywną ochroną prywatności) blokują domyślny sposób łączenia się
+// Firestore ze światem. To wymusza bardziej kompatybilne, "zwykłe" połączenie HTTP zamiast strumieniowego.
+db.settings({ experimentalAutoDetectLongPolling: true });
 
 let currentUser = null;
 let authReady = false;
