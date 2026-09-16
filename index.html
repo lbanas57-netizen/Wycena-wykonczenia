@@ -809,9 +809,17 @@ const firebaseConfig = {
   messagingSenderId: "1005668311083",
   appId: "1:1005668311083:web:ce13a72216cfbc2ca44a6e"
 };
-firebase.initializeApp(firebaseConfig);
+const fbApp = firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
-const db = firebase.firestore();
+// Baza w konsoli Firebase nazywa się dosłownie "default" (nie specjalnym "(default)"),
+// więc trzeba się połączyć z nią jawnie po nazwie zamiast polegać na domyślnym zachowaniu.
+let db;
+try{
+  db = firebase.firestore(fbApp, 'default');
+}catch(e){
+  console.warn('Named Firestore database init failed, falling back to default instance', e);
+  db = firebase.firestore();
+}
 // Niektóre przeglądarki (np. z agresywną ochroną prywatności) blokują domyślny sposób łączenia się
 // Firestore ze światem. To wymusza bardziej kompatybilne, "zwykłe" połączenie HTTP zamiast strumieniowego.
 db.settings({ experimentalForceLongPolling: true });
